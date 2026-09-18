@@ -1,0 +1,53 @@
+name: Build Windows PG17 package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - name: Check out pgvector
+        uses: actions/checkout@v7
+
+      - name: Set up PostgreSQL 17
+        uses: ankane/setup-postgres@v1
+        with:
+          postgres-version: 17
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build and test
+        shell: cmd
+        run: |
+          nmake /NOLOGO /F Makefile.win
+          nmake /NOLOGO /F Makefile.win install
+          nmake /NOLOGO /F Makefile.win installcheck
+
+      - name: Show regression diff on failure
+        if: failure()
+        shell: pwsh
+        run: Get-Content regression.diffs -ErrorAction SilentlyContinue
+
+      - name: Assemble package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force package/lib | Out-Null
+          New-Item -ItemType Directory -Force package/share/extension | Out-Null
+          Copy-Item vector.dll package/lib/
+          Copy-Item vector.control package/share/extension/
+          Copy-Item sql/vector--*.sql package/share/extension/
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: pgvector-pg17-windows-x64
+          path: package
+          if-no-files-found: error
+          retention-days: 30
